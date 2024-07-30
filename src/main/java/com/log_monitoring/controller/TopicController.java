@@ -34,7 +34,7 @@ public class TopicController {
     @DeleteMapping("/{id}")
     public ResponseEntity<String> deleteTopic(@PathVariable Long id) throws ExecutionException, InterruptedException {
         topicService.deleteTopic(id);
-        return ResponseEntity.ok("Deleted topic: " + id);
+        return ResponseEntity.ok("Kafka topic, consumer, DB 메타데이터 제거 성공: " + id);
     }
 
     @PutMapping("")
