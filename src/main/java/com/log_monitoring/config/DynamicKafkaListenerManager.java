@@ -1,6 +1,7 @@
 package com.log_monitoring.config;
 
 import com.log_monitoring.service.MessageProcessingService;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.ConsumerFactory;
@@ -17,11 +18,18 @@ import java.util.Map;
 public class DynamicKafkaListenerManager  {
 
     private final MessageProcessingService messageProcessingService;
+    private final InMemoryTopicMetadata inMemoryTopicMetadata;
     private final ConsumerFactory<String, String> consumerFactory;
     private final Map<String, KafkaMessageListenerContainer<String, String>> listenerContainers = new HashMap<>();
 
     @Value("${spring.kafka.consumer.group-id}")
     private String groupId;
+
+    // 시작 시 토픽별 리스너 추가
+    @PostConstruct
+    public void init() {
+        inMemoryTopicMetadata.getAllTopics().forEach(topicDto -> addListener(topicDto.getTopicName()));
+    }
 
     public void addListener(String topic) {
         String id = getListenerId(topic);
