@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.log_monitoring.config.InMemoryTopicMetadata;
 import com.log_monitoring.config.WebSocketHandler;
 import com.log_monitoring.dto.FieldDto;
-import com.log_monitoring.dto.LogDataDto;
+import com.log_monitoring.dto.RealTimeLogDataDto;
 import com.log_monitoring.dto.TopicDto;
 import com.log_monitoring.model.elasticsearch.LogData;
 import lombok.RequiredArgsConstructor;
@@ -32,19 +32,17 @@ public class MessageProcessingService {
     public void processMessage(ConsumerRecord<String, String> record) {
         TopicDto topicDto = inMemoryTopicMetadata.getTopicMetadata(record.topic());
         LogData logData = convertMessageToLogData(record.value(), topicDto).orElseThrow(IllegalArgumentException::new);
-        LogDataDto logDataDto = LogDataDto.fromEntity(logData);
+        RealTimeLogDataDto realTimeLogDataDto = RealTimeLogDataDto.fromEntity(logData);
         // 엘라스틱 서치 저장
         logDataService.save(logData);
         // 프론트엔드 전송
-        webSocketHandler.sendMessageToClients(logDataDto);
+        webSocketHandler.sendMessageToClients(realTimeLogDataDto);
     }
 
     private Optional<LogData> convertMessageToLogData(String message, TopicDto topicDto) {
         try {
             String TIME_STAMP = "timestamp";
             Map<String, Object> rawData = objectMapper.readValue(message, new TypeReference<>() {});
-
-
             Long timestamp = System.currentTimeMillis();
             if (rawData.containsKey(TIME_STAMP)) {
                 if (rawData.get(TIME_STAMP) instanceof Long) {
@@ -54,10 +52,8 @@ public class MessageProcessingService {
                     throw new IllegalArgumentException("[필드 오류] timestamp type error");
                 }
             }
-
             Map<String, String> metaData = topicDto.getFields().stream()
                     .collect(Collectors.toMap(FieldDto::getFieldName, FieldDto::getFieldType));
-
             // metaData rawData 비교
             for (String rawFieldName : metaData.keySet()) {
                 if (!metaData.containsKey(rawFieldName)) {
@@ -68,7 +64,6 @@ public class MessageProcessingService {
                     throw new IllegalArgumentException("[필드 오류] 메타데이터 설정과 다른 타입의 필드입니다.");
                 }
             }
-
             return Optional.of(LogData.builder()
                     .topicName(topicDto.getTopicName())
                     .timestamp(timestamp)
@@ -82,17 +77,13 @@ public class MessageProcessingService {
     // 타입 확인
     private boolean isValidType(String metadataType, Object value) {
         switch (metadataType.toLowerCase()) {
-            case "int":
+            case "integer":
                 if (value instanceof Integer) return true;
-                if (value instanceof Number) {
-                    return ((Number) value).intValue() == ((Number) value).doubleValue();
-                }
+                if (value instanceof Number) return ((Number) value).intValue() == ((Number) value).doubleValue();
                 return false;
             case "long":
                 if (value instanceof Long) return true;
-                if (value instanceof Number) {
-                    return ((Number) value).longValue() == ((Number) value).doubleValue();
-                }
+                if (value instanceof Number) return ((Number) value).longValue() == ((Number) value).doubleValue();
                 return false;
             case "float":
                 return value instanceof Float || value instanceof Double;

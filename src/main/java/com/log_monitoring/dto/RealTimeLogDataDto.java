@@ -11,21 +11,21 @@ import java.util.Map;
 @Getter
 @Setter
 @NoArgsConstructor
-public class LogDataDto {
+public class RealTimeLogDataDto {
 
     private String topicName;
     private Long timestamp;
     private Map<String, Object> data;
 
     @Builder
-    public LogDataDto(String topicName, Long timestamp, Map<String, Object> data) {
+    public RealTimeLogDataDto(String topicName, Long timestamp, Map<String, Object> data) {
         this.topicName = topicName;
         this.timestamp = timestamp;
         this.data = data;
     }
 
-    public static LogDataDto fromEntity(LogData logData) {
-        return LogDataDto.builder()
+    public static RealTimeLogDataDto fromEntity(LogData logData) {
+        return RealTimeLogDataDto.builder()
                 .topicName(logData.getTopicName())
                 .timestamp(logData.getTimestamp())
                 .data(logData.getData())
