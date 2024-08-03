@@ -11,7 +11,7 @@ import org.springframework.data.elasticsearch.annotations.FieldType;
 
 import java.util.Map;
 
-@Document(indexName = "log_data")
+@Document(indexName = "logs")
 @Getter
 @NoArgsConstructor
 public class LogData {
