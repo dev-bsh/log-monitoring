@@ -6,29 +6,31 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.List;
+
 @Getter @Setter
 @NoArgsConstructor
 public class AggSettingResponse {
 
     private Long id;
     private String topicName;
-    private String fieldName;
-    private String keyword;
+    private String settingName;
+    private List<ConditionDto> condition;
 
     @Builder
-    public AggSettingResponse(Long id, String topicName, String fieldName, String keyword) {
+    public AggSettingResponse(Long id, String topicName, String settingName, List<ConditionDto> condition) {
         this.id = id;
         this.topicName = topicName;
-        this.fieldName = fieldName;
-        this.keyword = keyword;
+        this.settingName = settingName;
+        this.condition = condition;
     }
 
-    public static AggSettingResponse fromEntity(AggSetting entity) {
+    public static AggSettingResponse fromEntity(AggSetting entity, List<ConditionDto> condition) {
         return AggSettingResponse.builder()
                 .id(entity.getId())
                 .topicName(entity.getTopicName())
-                .fieldName(entity.getFieldName())
-                .keyword(entity.getKeyword())
+                .settingName(entity.getSettingName())
+                .condition(condition)
                 .build();
     }
 

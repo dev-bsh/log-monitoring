@@ -60,9 +60,9 @@ public class MessageProcessingService {
             Map<String, String> metaData = topicDto.getFields().stream()
                     .collect(Collectors.toMap(FieldDto::getFieldName, FieldDto::getFieldType));
             // metaData rawData 비교
-            for (String rawFieldName : metaData.keySet()) {
+            for (String rawFieldName : rawData.keySet()) {
                 if (!metaData.containsKey(rawFieldName)) {
-                    log.error("[FIELD ERROR] 메타데이터에 없는 필드입니다. FieldName: {}", rawFieldName);
+                    log.error("[FIELD ERROR] 메타데이터에 없는 필드입니다. Input Data Field Name: {}", rawFieldName);
                     throw new IllegalArgumentException("[FIELD ERROR] 메타데이터에 없는 필드입니다.");
                 } else if (!isValidType(metaData.get(rawFieldName), rawData.get(rawFieldName))) {
                     log.error("[FIELD ERROR] 메타데이터에 설정된 타입과 다른 데이터입니다. [ 필드 이름: {} | 설정 타입: {} | Input Data: {} | Input Data Type: {} ] ",
@@ -75,7 +75,7 @@ public class MessageProcessingService {
                     .timestamp(timestamp)
                     .data(rawData)
                     .build());
-        } catch (JsonProcessingException | IllegalArgumentException e) {
+        } catch (JsonProcessingException | IllegalArgumentException | NullPointerException e) {
             return Optional.empty();
         }
     }

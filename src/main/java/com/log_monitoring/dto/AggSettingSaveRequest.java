@@ -6,26 +6,27 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.List;
+
 @Getter @Setter
 @NoArgsConstructor
 public class AggSettingSaveRequest {
 
     private String topicName;
-    private String fieldName;
-    private String keyword;
+    private String settingName;
+    private List<ConditionDto> condition;
 
     @Builder
-    public AggSettingSaveRequest(String topicName, String fieldName, String keyword) {
+    public AggSettingSaveRequest(String topicName, String settingName, List<ConditionDto> condition) {
         this.topicName = topicName;
-        this.fieldName = fieldName;
-        this.keyword = keyword;
+        this.settingName = settingName;
+        this.condition = condition;
     }
 
     public AggSetting toEntity() {
         return AggSetting.builder()
                 .topicName(topicName)
-                .fieldName(fieldName)
-                .keyword(keyword)
+                .settingName(settingName)
                 .build();
     }
 

@@ -1,10 +1,11 @@
 package com.log_monitoring.dto;
 
 
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+
+import java.util.List;
 
 @Getter @Setter
 @NoArgsConstructor
@@ -13,11 +14,12 @@ public class LogDataSearchRequest {
     private Long from;
     private Long to;
     private String topicName;
+    private List<ConditionDto> condition;
 
-    @Builder
-    public LogDataSearchRequest(Long from, Long to, String topicName) {
+    public LogDataSearchRequest(Long from, Long to, String topicName, List<ConditionDto> condition) {
         this.from = from;
         this.to = to;
         this.topicName = topicName;
+        this.condition = condition;
     }
 }

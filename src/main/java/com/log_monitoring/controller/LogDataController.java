@@ -1,6 +1,7 @@
 package com.log_monitoring.controller;
 
-import com.log_monitoring.dto.LogDataSearchKeywordRequest;
+import com.log_monitoring.dto.LogDataAggSearchRequest;
+import com.log_monitoring.dto.LogDataAggSearchResponse;
 import com.log_monitoring.dto.LogDataSearchRequest;
 import com.log_monitoring.dto.LogDataSearchResponse;
 import com.log_monitoring.service.LogDataService;
@@ -15,30 +16,21 @@ public class LogDataController {
 
     private final LogDataService logDataService;
 
+    // raw data 검색 (시간, 토픽, 조건)
     @PostMapping
     public ResponseEntity<LogDataSearchResponse> searchLogData(@RequestBody LogDataSearchRequest request) {
-        return ResponseEntity.ok(logDataService.findAllBetweenTime(request));
+        return ResponseEntity.ok(logDataService.findAllByCondition(request));
     }
 
-    @PostMapping("/keyword")
-    public ResponseEntity<LogDataSearchResponse> searchLogDataByKeyword(@RequestBody LogDataSearchKeywordRequest request) {
-        return ResponseEntity.ok(logDataService.findAllByKeywordBetweenTime(request));
-    }
-
+    // 통게 데이터 검색 (시간, 토픽, 조건)
     @PostMapping("/aggregation")
-    public void searchLogDataAggregation() {
-
+    public ResponseEntity<LogDataAggSearchResponse> searchLogDataAggregation(@RequestBody LogDataAggSearchRequest request) {
+        return ResponseEntity.ok(logDataService.findAllAggByCondition(request));
     }
 
     // redis에 저장된 실시간 통계 전체 조회
-    @GetMapping("/realtime/list")
-    public void getAllRealTimeLogDataAggregations() {
-
-    }
-
-    // redis에 저장된 실시간 통계 최근 1분치 조회
-    @GetMapping("/realtime")
-    public void getRealTimeLogDataAggregationData() {
+    @GetMapping("/realtime/{topicName}")
+    public void getAllRealTimeLogDataAggregations(@PathVariable String topicName) {
 
     }
 

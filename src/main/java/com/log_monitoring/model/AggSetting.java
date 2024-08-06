@@ -14,15 +14,12 @@ import lombok.NoArgsConstructor;
 public class AggSetting {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
     private String topicName;
-    private String fieldName;
-    private String keyword;
+    private String settingName;
 
     @Builder
-    public AggSetting(String topicName, String fieldName, String keyword) {
+    public AggSetting(String topicName, String settingName) {
         this.topicName = topicName;
-        this.fieldName = fieldName;
-        this.keyword = keyword;
+        this.settingName = settingName;
     }
 }
