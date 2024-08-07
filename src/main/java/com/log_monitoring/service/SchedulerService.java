@@ -1,12 +1,11 @@
 package com.log_monitoring.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.log_monitoring.config.WebSocketHandler;
 import com.log_monitoring.dto.AggSettingResponse;
 import com.log_monitoring.dto.LogDataAggSearchRequest;
 import com.log_monitoring.dto.LogDataAggSearchResponse;
-import com.log_monitoring.model.AggSetting;
-import com.log_monitoring.repository.AggSettingRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -17,12 +16,11 @@ import java.util.*;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class RedisService {
+public class SchedulerService {
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final WebSocketHandler webSocketHandler;
     private final AggSettingService aggSettingService;
-    private final AggSettingRepository aggSettingRepository;
     private final LogDataService logDataService;
     private final ObjectMapper objectMapper;
 
@@ -52,7 +50,7 @@ public class RedisService {
     private void saveAggSearchResponseInRedis(LogDataAggSearchResponse aggSearchResult) {
         for (LogDataAggSearchResponse.AggResult aggResult : aggSearchResult.getResult()) {
             // key: topicName_settingName
-            String redisKey = aggSearchResult.getTopicName()+"_"+aggResult.getSettingName();
+            String redisKey = generateRedisKey(aggSearchResult.getTopicName(), aggResult.getSettingName());
             redisTemplate.opsForList().rightPush(redisKey, aggResult.getData().get(0));
             // 60개 넘어가면 오래된 값 1개 제거
             if (Objects.requireNonNull(redisTemplate.opsForList().size(redisKey)).intValue() > 60) {
@@ -87,16 +85,16 @@ public class RedisService {
 
     // redis에 저장된 전체 통계 데이터 조회
     public LogDataAggSearchResponse findAllAggregationInRedisByTopic(String topicName) {
-        List<AggSetting> aggSettingList = aggSettingRepository.findAllByTopicName(topicName);
+        List<AggSettingResponse> aggSettingList = aggSettingService.findAllByTopicName(topicName);
         List<LogDataAggSearchResponse.AggResult> aggResultList = new ArrayList<>();
         // topic 내의 설정별 데이터 전부 조회
-        for (int i = -1; i < aggSettingList.size(); i++) {
-            String settingName = i == -1 ? "total_logs" : aggSettingList.get(i).getSettingName();
-            String redisKey = topicName+"_"+settingName;
-            List<LogDataAggSearchResponse.AggResult.Data> dataList =
-                    objectMapper.convertValue(redisTemplate.opsForList().range(redisKey, 0, -1), List.class);
+        for (AggSettingResponse aggSetting: aggSettingList) {
+            String redisKey = generateRedisKey(topicName, aggSetting.getSettingName());
+            List<Object> redisValues = redisTemplate.opsForList().range(redisKey, 0, -1);
+            // redis에 저장된 데이터 response로 변환
+            List<LogDataAggSearchResponse.AggResult.Data> dataList = objectMapper.convertValue(redisValues, new TypeReference<>() {});
             LogDataAggSearchResponse.AggResult aggResult = LogDataAggSearchResponse.AggResult.builder()
-                    .settingName(settingName)
+                    .settingName(aggSetting.getSettingName())
                     .data(dataList).build();
             aggResultList.add(aggResult);
         }
@@ -104,6 +102,10 @@ public class RedisService {
                 .topicName(topicName)
                 .result(aggResultList)
                 .build();
+    }
+
+    private String generateRedisKey(String topicName, String settingName) {
+        return topicName+"_"+settingName;
     }
 
 }

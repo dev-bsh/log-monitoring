@@ -9,6 +9,7 @@ import com.log_monitoring.repository.AggSettingRepository;
 import com.log_monitoring.repository.ConditionRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -19,6 +20,7 @@ public class AggSettingService {
 
     private final AggSettingRepository aggSettingRepository;
     private final ConditionRepository conditionRepository;
+    private final RedisTemplate<String, Object> redisTemplate;
 
     // 1분간 스케줄러에서 통계 데이터 수집할 설정 저장
     @Transactional
@@ -36,6 +38,7 @@ public class AggSettingService {
                 .orElseThrow(() -> new RuntimeException("AggregationSetting id : " + id + " not found"));
         conditionRepository.deleteAllByAggSettingId(aggSetting.getId());
         aggSettingRepository.delete(aggSetting);
+        redisTemplate.delete(generateRedisKey(aggSetting.getTopicName(), aggSetting.getSettingName()));
     }
 
     public List<AggSettingResponse> findAll() {
@@ -63,5 +66,10 @@ public class AggSettingService {
         List<Long> settingIds = settings.stream().map(AggSetting::getId).toList();
         conditionRepository.deleteAllByAggSettingIds(settingIds);
         aggSettingRepository.deleteAllByTopicName(topicName);
+        settings.forEach(setting -> redisTemplate.delete(generateRedisKey(topicName, setting.getSettingName())));
+    }
+
+    private String generateRedisKey(String topicName, String settingName) {
+        return topicName+"_"+settingName;
     }
 }

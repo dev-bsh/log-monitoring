@@ -5,7 +5,7 @@ import com.log_monitoring.dto.LogDataAggSearchResponse;
 import com.log_monitoring.dto.LogDataSearchRequest;
 import com.log_monitoring.dto.LogDataSearchResponse;
 import com.log_monitoring.service.LogDataService;
-import com.log_monitoring.service.RedisService;
+import com.log_monitoring.service.SchedulerService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.*;
 public class LogDataController {
 
     private final LogDataService logDataService;
-    private final RedisService redisService;
+    private final SchedulerService schedulerService;
 
     // raw data 검색 (시간, 토픽, 조건)
     @Operation(
@@ -52,7 +52,7 @@ public class LogDataController {
     // redis에 저장된 실시간 통계 전체 조회
     @GetMapping("/realtime/{topicName}")
     public ResponseEntity<LogDataAggSearchResponse> getAllRealTimeLogDataAggregations(@PathVariable String topicName) {
-        return ResponseEntity.ok(redisService.findAllAggregationInRedisByTopic(topicName));
+        return ResponseEntity.ok(schedulerService.findAllAggregationInRedisByTopic(topicName));
     }
 
 }
