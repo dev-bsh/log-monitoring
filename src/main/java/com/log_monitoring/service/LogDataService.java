@@ -69,7 +69,4 @@ public class LogDataService {
                 .build();
     }
 
-
-    // 실시간 통계 데이터 생성 스케줄러
-
 }

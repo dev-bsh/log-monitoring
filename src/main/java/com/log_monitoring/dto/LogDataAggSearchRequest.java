@@ -1,9 +1,11 @@
 package com.log_monitoring.dto;
 
 
-import lombok.*;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @Getter @Setter
@@ -15,6 +17,7 @@ public class LogDataAggSearchRequest {
     private String topicName;
     private List<SearchSetting> searchSettings;
 
+    @Builder
     public LogDataAggSearchRequest(Long from, Long to, String topicName, List<SearchSetting> searchSettings) {
         this.from = from;
         this.to = to;

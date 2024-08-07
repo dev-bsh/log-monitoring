@@ -1,8 +1,8 @@
 package com.log_monitoring.repository.elasticsearch;
 
 import co.elastic.clients.elasticsearch._types.aggregations.Aggregation;
-import co.elastic.clients.elasticsearch._types.aggregations.AggregationBuilders;
 import co.elastic.clients.elasticsearch._types.aggregations.CalendarInterval;
+import co.elastic.clients.elasticsearch._types.aggregations.FieldDateMath;
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.json.JsonData;
 import com.log_monitoring.dto.ConditionDto;
@@ -10,8 +10,6 @@ import com.log_monitoring.dto.LogDataAggSearchRequest;
 import com.log_monitoring.dto.LogDataSearchRequest;
 import com.log_monitoring.model.elasticsearch.LogData;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.elasticsearch.client.elc.ElasticsearchAggregation;
-import org.springframework.data.elasticsearch.client.elc.ElasticsearchAggregations;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.client.elc.NativeQueryBuilder;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
@@ -51,18 +49,35 @@ public class LogDataRepositoryExtensionImpl implements LogDataRepositoryExtensio
                 .withQuery(q -> q.bool(bool -> bool
                         .filter(f -> f.term(t -> t.field(TOPIC_NAME).value(request.getTopicName())))
                         .filter(f -> f.range(r -> r.field(TIMESTAMP).gte(JsonData.of(request.getFrom())).lte(JsonData.of(request.getTo()))))))
-                .withAggregation("total_logs", Aggregation.of(agg ->
-                        agg.dateHistogram(dh -> dh.field(TIMESTAMP).calendarInterval(getInterval(request)))));
+                .withAggregation("total_logs", Aggregation.of(agg -> agg
+                        .dateHistogram(dh -> dh.field(TIMESTAMP)
+                                .calendarInterval(getInterval(request))
+                                .minDocCount(0)
+                                .extendedBounds(eb -> eb
+                                        .min(FieldDateMath.of(f -> f.value(request.getFrom().doubleValue())))
+                                        .max(FieldDateMath.of(f -> f.value(request.getTo().doubleValue())))
+                                )
+                        )
+                ));
 
         // 집계 조건 추가
         for (LogDataAggSearchRequest.SearchSetting setting : request.getSearchSettings()) {
-            queryBuilder.withAggregation(setting.getSettingName(), Aggregation.of(agg ->
-                    agg.filter(q -> q.bool(b -> {
+            queryBuilder.withAggregation(setting.getSettingName(), Aggregation.of(agg -> agg
+                    .filter(q -> q.bool(b -> {
                         addConditionQuery(b, setting.getConditionList());
                         return b;
-                    })).aggregations("interval", Aggregation.of(subAgg ->
-                            subAgg.dateHistogram(dh -> dh.field(TIMESTAMP).calendarInterval(getInterval(request)))))
-            ));
+                    }))
+                    .aggregations("interval", Aggregation.of(subAgg -> subAgg
+                            .dateHistogram(dh -> dh.field(TIMESTAMP)
+                                    .calendarInterval(getInterval(request))
+                                    .minDocCount(0)
+                                    .extendedBounds(eb -> eb
+                                            .min(FieldDateMath.of(f -> f.value(request.getFrom().doubleValue())))
+                                            .max(FieldDateMath.of(f -> f.value(request.getTo().doubleValue())))
+                                    )
+                            ))
+                    ))
+            );
         }
 
         Query query = queryBuilder.build();

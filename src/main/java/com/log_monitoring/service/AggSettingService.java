@@ -48,6 +48,16 @@ public class AggSettingService {
                 .toList();
     }
 
+    public List<AggSettingResponse> findAllByTopicName(String topicName) {
+        return aggSettingRepository.findAllByTopicName(topicName).stream()
+                .map(entity -> {
+                    List<ConditionDto> conditionDtoList = conditionRepository.findAllByAggSettingId(entity.getId()).stream()
+                            .map(ConditionDto::fromEntity).toList();
+                    return AggSettingResponse.fromEntity(entity, conditionDtoList);
+                })
+                .toList();
+    }
+
     public void deleteAllByTopicName(String topicName) {
         List<AggSetting> settings = aggSettingRepository.findAllByTopicName(topicName);
         List<Long> settingIds = settings.stream().map(AggSetting::getId).toList();
