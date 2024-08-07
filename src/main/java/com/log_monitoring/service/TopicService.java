@@ -29,6 +29,7 @@ public class TopicService {
     private final AdminClient adminClient;
     private final TopicMetadataRepository topicMetadataRepository;
     private final FieldMetadataRepository fieldMetadataRepository;
+    private final AggSettingService aggSettingService;
     private final InMemoryTopicMetadata inMemoryTopicMetadata;
     private final DynamicKafkaListenerManager listenerManager;
 
@@ -60,6 +61,8 @@ public class TopicService {
         inMemoryTopicMetadata.removeTopicMetadata(topicMetadata.getTopicName());
         fieldMetadataRepository.deleteByTopicMetadataId(topicMetadata.getId());
         topicMetadataRepository.delete(topicMetadata);
+        // 토픽 이름으로 생성된 설정 제거
+        aggSettingService.deleteAllByTopicName(topicMetadata.getTopicName());
     }
 
     // 토픽 DB, cache 설정 변경

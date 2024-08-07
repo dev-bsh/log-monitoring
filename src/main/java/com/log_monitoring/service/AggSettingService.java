@@ -47,4 +47,11 @@ public class AggSettingService {
                 })
                 .toList();
     }
+
+    public void deleteAllByTopicName(String topicName) {
+        List<AggSetting> settings = aggSettingRepository.findAllByTopicName(topicName);
+        List<Long> settingIds = settings.stream().map(AggSetting::getId).toList();
+        conditionRepository.deleteAllByAggSettingIds(settingIds);
+        aggSettingRepository.deleteAllByTopicName(topicName);
+    }
 }
