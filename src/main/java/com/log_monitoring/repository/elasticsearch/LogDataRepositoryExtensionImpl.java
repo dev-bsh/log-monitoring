@@ -48,8 +48,28 @@ public class LogDataRepositoryExtensionImpl implements LogDataRepositoryExtensio
         NativeQueryBuilder queryBuilder = NativeQuery.builder()
                 .withQuery(q -> q.bool(bool -> bool
                         .filter(f -> f.term(t -> t.field(TOPIC_NAME).value(request.getTopicName())))
-                        .filter(f -> f.range(r -> r.field(TIMESTAMP).gte(JsonData.of(request.getFrom())).lte(JsonData.of(request.getTo()))))))
-                .withAggregation("total_logs", Aggregation.of(agg -> agg
+                        .filter(f -> f.range(r -> r.field(TIMESTAMP).gte(JsonData.of(request.getFrom())).lte(JsonData.of(request.getTo())))))
+                );
+        // 집계 조건 추가
+        for (LogDataAggSearchRequest.SearchSetting setting : request.getSearchSettings()) {
+            if (!setting.getConditionList().isEmpty()) {
+                addAggregationWithConditionQuery(queryBuilder, setting, request);
+            } else {
+                addAggregationTotalQuery(queryBuilder, setting.getSettingName() , request);
+            }
+        }
+        Query query = queryBuilder.build();
+        return elasticsearchOperations.search(query, LogData.class, index);
+    }
+
+    // 조건별 DateHistogram
+    private void addAggregationWithConditionQuery(NativeQueryBuilder queryBuilder, LogDataAggSearchRequest.SearchSetting setting, LogDataAggSearchRequest request) {
+        queryBuilder.withAggregation(setting.getSettingName(), Aggregation.of(agg -> agg
+                .filter(q -> q.bool(b -> {
+                    addConditionQuery(b, setting.getConditionList());
+                    return b;
+                }))
+                .aggregations("interval", Aggregation.of(subAgg -> subAgg
                         .dateHistogram(dh -> dh.field(TIMESTAMP)
                                 .calendarInterval(getInterval(request))
                                 .minDocCount(0)
@@ -57,40 +77,31 @@ public class LogDataRepositoryExtensionImpl implements LogDataRepositoryExtensio
                                         .min(FieldDateMath.of(f -> f.value(request.getFrom().doubleValue())))
                                         .max(FieldDateMath.of(f -> f.value(request.getTo().doubleValue())))
                                 )
-                        )
-                ));
-
-        // 집계 조건 추가
-        for (LogDataAggSearchRequest.SearchSetting setting : request.getSearchSettings()) {
-            queryBuilder.withAggregation(setting.getSettingName(), Aggregation.of(agg -> agg
-                    .filter(q -> q.bool(b -> {
-                        addConditionQuery(b, setting.getConditionList());
-                        return b;
-                    }))
-                    .aggregations("interval", Aggregation.of(subAgg -> subAgg
-                            .dateHistogram(dh -> dh.field(TIMESTAMP)
-                                    .calendarInterval(getInterval(request))
-                                    .minDocCount(0)
-                                    .extendedBounds(eb -> eb
-                                            .min(FieldDateMath.of(f -> f.value(request.getFrom().doubleValue())))
-                                            .max(FieldDateMath.of(f -> f.value(request.getTo().doubleValue())))
-                                    )
-                            ))
-                    ))
-            );
-        }
-
-        Query query = queryBuilder.build();
-        return elasticsearchOperations.search(query, LogData.class, index);
+                        ))
+                ))
+        );
     }
 
-
+    // 전체 데이터 DateHistogram
+    private void addAggregationTotalQuery(NativeQueryBuilder queryBuilder, String settingName, LogDataAggSearchRequest request) {
+        queryBuilder.withAggregation(settingName, Aggregation.of(agg -> agg
+                .dateHistogram(dh -> dh.field(TIMESTAMP)
+                        .calendarInterval(getInterval(request))
+                        .minDocCount(0)
+                        .extendedBounds(eb -> eb
+                                .min(FieldDateMath.of(f -> f.value(request.getFrom().doubleValue())))
+                                .max(FieldDateMath.of(f -> f.value(request.getTo().doubleValue())))
+                        )
+                ))
+        );
+    }
 
     private void addConditionQuery(BoolQuery.Builder bool, List<ConditionDto> conditionList) {
         for (ConditionDto condition: conditionList) {
             String fieldName = DATA+condition.getFieldName();
             if (condition.getEqual()) {
-                bool.filter(f -> f.term(t -> t.field(fieldName).value(condition.getKeyword())));
+                // 완전 일치 시 keyword 값으로 탐색
+                bool.filter(f -> f.term(t -> t.field(fieldName+".keyword").value(condition.getKeyword())));
             } else {
                 bool.filter(f -> f.match(t -> t.field(fieldName).query(condition.getKeyword())));
             }

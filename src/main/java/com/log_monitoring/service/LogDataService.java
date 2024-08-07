@@ -1,5 +1,6 @@
 package com.log_monitoring.service;
 
+import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
 import co.elastic.clients.elasticsearch._types.aggregations.Buckets;
 import co.elastic.clients.elasticsearch._types.aggregations.DateHistogramBucket;
 import co.elastic.clients.elasticsearch._types.aggregations.FilterAggregate;
@@ -47,12 +48,12 @@ public class LogDataService {
             ElasticsearchAggregations aggregations = (ElasticsearchAggregations) searchHits.getAggregations();
             Map<String, ElasticsearchAggregation> aggregationMap = Objects.requireNonNull(aggregations).aggregationsAsMap();
             for (String settingName : aggregationMap.keySet()) {
+                Aggregate aggregate = aggregationMap.get(settingName).aggregation().getAggregate();
                 Buckets<DateHistogramBucket> buckets;
-                if (settingName.equals("total_logs")) { // 전체 로그 집계 결과
-                    buckets = aggregationMap.get("total_logs").aggregation().getAggregate().dateHistogram().buckets();
-                } else { //설정별 로그 집계 결과
-                    FilterAggregate filterAggregate = aggregationMap.get(settingName).aggregation().getAggregate().filter();
-                    buckets = filterAggregate.aggregations().get("interval").dateHistogram().buckets();
+                if (aggregate.isDateHistogram()) { // 범위내 모든 로그 대상 DateHistogram
+                    buckets = aggregate.dateHistogram().buckets();
+                } else { // 설정 Filter 로그 대상 DateHistogram
+                    buckets = aggregate.filter().aggregations().get("interval").dateHistogram().buckets();
                 }
                 // 집계 결과 값에서 timestamp, count 값 매핑
                 List<LogDataAggSearchResponse.AggResult.Data> dataList = buckets.array().stream()

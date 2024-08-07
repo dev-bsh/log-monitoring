@@ -84,8 +84,8 @@ public class MessageProcessingService {
     private boolean isValidType(String metadataType, Object value) {
         if (value == null) return false;
         return switch (metadataType.toLowerCase()) {
-            case "integer" -> isInteger(value);
-            case "long" -> isLong(value);
+            case "integer" -> value instanceof Integer;
+            case "long" -> value instanceof Long || value instanceof Integer;
             case "float" -> value instanceof Float;
             case "double" -> value instanceof Double || value instanceof Float;
             case "string" -> value instanceof String;
@@ -95,26 +95,6 @@ public class MessageProcessingService {
             case "object" -> true;
             default -> false;
         };
-    }
-
-    private boolean isInteger(Object value) {
-        if (value instanceof Integer || value instanceof Short || value instanceof Byte) {
-            return true;
-        }
-        if (value instanceof Number) {
-            return ((Number) value).intValue() == ((Number) value).doubleValue();
-        }
-        return false;
-    }
-
-    private boolean isLong(Object value) {
-        if (value instanceof Long) {
-            return true;
-        }
-        if (value instanceof Number) {
-            return ((Number) value).longValue() == ((Number) value).doubleValue();
-        }
-        return false;
     }
 
 }
