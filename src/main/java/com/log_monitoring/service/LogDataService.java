@@ -17,10 +17,7 @@ import org.springframework.data.elasticsearch.client.elc.ElasticsearchAggregatio
 import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 @Slf4j
 @Service
@@ -30,7 +27,17 @@ public class LogDataService {
     private final LogDataRepository logDataRepository;
 
     public void save(LogData logData) {
-        logDataRepository.save(logData);
+        Map<String, Object> newData = new HashMap<>();
+        // 필드이름 중복 피하기 위해 topicName, fieldName 결합
+        logData.getData().forEach((key, value) -> {
+            newData.put(logData.getTopicName()+"_"+key, value);
+        });
+        LogData convertedLogData = LogData.builder()
+                .topicName(logData.getTopicName())
+                .timestamp(logData.getTimestamp())
+                .data(newData)
+                .build();
+        logDataRepository.save(convertedLogData);
     }
 
     // raw data 조회
@@ -41,6 +48,11 @@ public class LogDataService {
 
     // aggregation data 조회
     public LogDataAggSearchResponse findAllAggByCondition(LogDataAggSearchRequest requestDto) {
+        long term = requestDto.getTo() - requestDto.getFrom();
+        if (term > 86400_000 * 7) {
+            throw new IllegalArgumentException("[Timestamp Range ERROR] 조회하려는 시간범위가 7일보다 크게 설정되었습니다.");
+        }
+
         SearchHits<LogData> searchHits = logDataRepository.findAllAggByCondition(requestDto);
         List<LogDataAggSearchResponse.AggResult> resultList = new ArrayList<>();
         // searchHits에서 집계 결과 추출

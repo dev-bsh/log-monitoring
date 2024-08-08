@@ -28,7 +28,6 @@ public class LogDataRepositoryExtensionImpl implements LogDataRepositoryExtensio
     private final IndexCoordinates index = IndexCoordinates.of("logs");
     private final String TOPIC_NAME = "topicName";
     private final String TIMESTAMP = "timestamp";
-    private final String DATA = "data.";
 
     @Override
     public SearchHits<LogData> findAllByCondition(LogDataSearchRequest request) {
@@ -36,7 +35,7 @@ public class LogDataRepositoryExtensionImpl implements LogDataRepositoryExtensio
                 .withQuery(q -> q.bool(bool -> {
                     bool.filter(f -> f.term(t -> t.field(TOPIC_NAME).value(request.getTopicName())))
                         .filter(f -> f.range(r -> r.field(TIMESTAMP).gte(JsonData.of(request.getFrom())).lte(JsonData.of(request.getTo()))));
-                        addConditionQuery(bool, request.getCondition());
+                        addConditionQuery(bool, request.getCondition(), request.getTopicName());
                     return bool;
                 }))
                 .build();
@@ -45,17 +44,27 @@ public class LogDataRepositoryExtensionImpl implements LogDataRepositoryExtensio
 
     @Override
     public SearchHits<LogData> findAllAggByCondition(LogDataAggSearchRequest request) {
+        boolean isContainTotalSearch = request.getSearchSettings().stream().anyMatch(setting -> setting.getConditionList().isEmpty());
         NativeQueryBuilder queryBuilder = NativeQuery.builder()
-                .withQuery(q -> q.bool(bool -> bool
-                        .filter(f -> f.term(t -> t.field(TOPIC_NAME).value(request.getTopicName())))
-                        .filter(f -> f.range(r -> r.field(TIMESTAMP).gte(JsonData.of(request.getFrom())).lte(JsonData.of(request.getTo())))))
-                );
-        // 집계 조건 추가
+                .withQuery(q -> q.bool(bool -> {
+                    bool.filter(f -> f.term(t -> t.field(TOPIC_NAME).value(request.getTopicName())))
+                        .filter(f -> f.range(r -> r.field(TIMESTAMP).gte(JsonData.of(request.getFrom())).lte(JsonData.of(request.getTo()))));
+                    // 전체 조회 설정이 없으면 should 쿼리로 집계 전 범위 좁히기
+                    if (!isContainTotalSearch) {
+                        bool.should(s -> s.bool(b -> {
+                            request.getSearchSettings().forEach(searchSetting ->
+                                    addConditionQuery(b, searchSetting.getConditionList(), request.getTopicName()));
+                            return b;
+                        }));
+                    }
+                    return bool;
+                }));
+        // 집계 쿼리 추가
         for (LogDataAggSearchRequest.SearchSetting setting : request.getSearchSettings()) {
-            if (!setting.getConditionList().isEmpty()) {
-                addAggregationWithConditionQuery(queryBuilder, setting, request);
-            } else {
-                addAggregationTotalQuery(queryBuilder, setting.getSettingName() , request);
+            if (setting.getConditionList().isEmpty()) { // filter 조건 없는 설정이면 전체 로그 집계
+                queryBuilder.withAggregation(setting.getSettingName(), addDateHistogramAggregation(request));
+            } else { // filter 조건으로 집계
+                queryBuilder.withAggregation(setting.getSettingName(), addAggregationWithConditionQuery(setting.getConditionList(), request));
             }
         }
         Query query = queryBuilder.build();
@@ -63,28 +72,17 @@ public class LogDataRepositoryExtensionImpl implements LogDataRepositoryExtensio
     }
 
     // 조건별 DateHistogram
-    private void addAggregationWithConditionQuery(NativeQueryBuilder queryBuilder, LogDataAggSearchRequest.SearchSetting setting, LogDataAggSearchRequest request) {
-        queryBuilder.withAggregation(setting.getSettingName(), Aggregation.of(agg -> agg
+    private Aggregation addAggregationWithConditionQuery(List<ConditionDto> conditionList, LogDataAggSearchRequest request) {
+        return Aggregation.of(agg -> agg
                 .filter(q -> q.bool(b -> {
-                    addConditionQuery(b, setting.getConditionList());
+                    addConditionQuery(b, conditionList, request.getTopicName());
                     return b;
                 }))
-                .aggregations("interval", Aggregation.of(subAgg -> subAgg
-                        .dateHistogram(dh -> dh.field(TIMESTAMP)
-                                .calendarInterval(getInterval(request))
-                                .minDocCount(0)
-                                .extendedBounds(eb -> eb
-                                        .min(FieldDateMath.of(f -> f.value(request.getFrom().doubleValue())))
-                                        .max(FieldDateMath.of(f -> f.value(request.getTo().doubleValue())))
-                                )
-                        ))
-                ))
-        );
+                .aggregations("interval", addDateHistogramAggregation(request)));
     }
 
-    // 전체 데이터 DateHistogram
-    private void addAggregationTotalQuery(NativeQueryBuilder queryBuilder, String settingName, LogDataAggSearchRequest request) {
-        queryBuilder.withAggregation(settingName, Aggregation.of(agg -> agg
+    private Aggregation addDateHistogramAggregation(LogDataAggSearchRequest request) {
+        return Aggregation.of(agg -> agg
                 .dateHistogram(dh -> dh.field(TIMESTAMP)
                         .calendarInterval(getInterval(request))
                         .minDocCount(0)
@@ -92,13 +90,13 @@ public class LogDataRepositoryExtensionImpl implements LogDataRepositoryExtensio
                                 .min(FieldDateMath.of(f -> f.value(request.getFrom().doubleValue())))
                                 .max(FieldDateMath.of(f -> f.value(request.getTo().doubleValue())))
                         )
-                ))
-        );
+                ));
     }
 
-    private void addConditionQuery(BoolQuery.Builder bool, List<ConditionDto> conditionList) {
+    private void addConditionQuery(BoolQuery.Builder bool, List<ConditionDto> conditionList, String topicName) {
         for (ConditionDto condition: conditionList) {
-            String fieldName = DATA+condition.getFieldName();
+            // 필드 중복 방지를 위해 topicName_fieldName로 저장되어 있음
+            String fieldName = "data."+topicName+"_"+condition.getFieldName();
             if (condition.getEqual()) {
                 // 완전 일치 시 keyword 값으로 탐색
                 bool.filter(f -> f.term(t -> t.field(fieldName+".keyword").value(condition.getKeyword())));
