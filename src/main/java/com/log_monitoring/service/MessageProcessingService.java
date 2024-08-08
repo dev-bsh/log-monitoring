@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.log_monitoring.config.InMemoryTopicMetadata;
-import com.log_monitoring.config.WebSocketHandler;
 import com.log_monitoring.dto.FieldDto;
 import com.log_monitoring.dto.LogDataDto;
 import com.log_monitoring.dto.TopicDto;
@@ -12,6 +11,7 @@ import com.log_monitoring.model.elasticsearch.LogData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 public class MessageProcessingService {
 
     private final InMemoryTopicMetadata inMemoryTopicMetadata;
-    private final WebSocketHandler webSocketHandler;
+    private final SimpMessagingTemplate simpMessagingTemplate;
     private final LogDataService logDataService;
     private final ObjectMapper objectMapper;
 
@@ -37,9 +37,9 @@ public class MessageProcessingService {
             // 엘라스틱 서치 저장
             logDataService.save(logData);
             // 프론트엔드 전송
-            webSocketHandler.sendMessageToClients(logDataDto);
-        } catch (IllegalArgumentException e) {
-            log.error("kafka listener message process error");
+            simpMessagingTemplate.convertAndSend("/topic/raw/"+logDataDto.getTopicName(), logDataDto);
+        } catch (Exception e) {
+            log.error("kafka listener message process error: {}", e.getMessage());
         }
 
     }

@@ -2,13 +2,13 @@ package com.log_monitoring.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.log_monitoring.config.WebSocketHandler;
 import com.log_monitoring.dto.AggSettingResponse;
 import com.log_monitoring.dto.LogDataAggSearchRequest;
 import com.log_monitoring.dto.LogDataAggSearchResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -19,7 +19,7 @@ import java.util.*;
 public class SchedulerService {
 
     private final RedisTemplate<String, Object> redisTemplate;
-    private final WebSocketHandler webSocketHandler;
+    private final SimpMessagingTemplate messagingTemplate;
     private final AggSettingService aggSettingService;
     private final LogDataService logDataService;
     private final ObjectMapper objectMapper;
@@ -37,14 +37,12 @@ public class SchedulerService {
         creatSearchRequestPerMinute(now, aggSettingMap, aggSearchRequestList);
 
         // 설정별 1분 단위 조회
-        List<LogDataAggSearchResponse> totalRealTimeAggResult = new ArrayList<>();
         for (LogDataAggSearchRequest searchRequest : aggSearchRequestList) {
             LogDataAggSearchResponse aggSearchResult = logDataService.findAllAggByCondition(searchRequest);
             saveAggSearchResponseInRedis(aggSearchResult); //집계 결과 redis에 저장
-            totalRealTimeAggResult.add(aggSearchResult);
+            // 웹소켓으로 전송
+            messagingTemplate.convertAndSend("/topic/agg/"+aggSearchResult.getTopicName(), aggSearchResult);
         }
-        // 웹소켓으로 전송
-        webSocketHandler.sendMessageToClients(totalRealTimeAggResult);
     }
 
     private void saveAggSearchResponseInRedis(LogDataAggSearchResponse aggSearchResult) {
