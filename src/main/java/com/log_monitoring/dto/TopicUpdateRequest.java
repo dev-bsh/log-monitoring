@@ -12,14 +12,12 @@ import java.util.Set;
 public class TopicUpdateRequest {
 
     private Long id;
-    private String topicName;
     private String topicDescription;
     private Set<FieldDto> fields;
 
     @Builder
-    public TopicUpdateRequest(Long id, String topicName, String topicDescription, Set<FieldDto> fields) {
+    public TopicUpdateRequest(Long id, String topicDescription, Set<FieldDto> fields) {
         this.id = id;
-        this.topicName = topicName;
         this.topicDescription = topicDescription;
         this.fields = fields;
     }

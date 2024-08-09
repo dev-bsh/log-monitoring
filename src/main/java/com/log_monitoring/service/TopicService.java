@@ -1,6 +1,5 @@
 package com.log_monitoring.service;
 
-import com.log_monitoring.config.DynamicKafkaListenerManager;
 import com.log_monitoring.config.InMemoryTopicMetadata;
 import com.log_monitoring.dto.FieldDto;
 import com.log_monitoring.dto.TopicDto;
@@ -13,11 +12,10 @@ import com.log_monitoring.repository.TopicMetadataRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
@@ -26,43 +24,43 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TopicService {
 
-    private final AdminClient adminClient;
     private final TopicMetadataRepository topicMetadataRepository;
     private final FieldMetadataRepository fieldMetadataRepository;
     private final AggSettingService aggSettingService;
     private final InMemoryTopicMetadata inMemoryTopicMetadata;
-    private final DynamicKafkaListenerManager listenerManager;
+    private final KafkaService kafkaService;
+    private final IndexService indexService;
 
     @Transactional(rollbackOn = {ExecutionException.class, InterruptedException.class, RuntimeException.class})
     public Long createTopic(TopicSaveRequest topicRequest) throws ExecutionException, InterruptedException {
-        // DB 및 캐시 저장
+        if (topicMetadataRepository.findByTopicName(topicRequest.getTopicName()).isPresent()) {
+            throw new IllegalArgumentException("이미 존재하는 토픽입니다. topicName: " +topicRequest.getTopicName());
+        }
+        // DB 저장
         TopicMetadata savedTopicMetadata = topicMetadataRepository.save(topicRequest.toEntity());
         Set<FieldMetadata> fieldSet = topicRequest.getFields().stream()
                 .map(fieldDto -> fieldDto.toEntity(savedTopicMetadata))
                 .collect(Collectors.toSet());
         fieldMetadataRepository.saveAll(fieldSet);
-        inMemoryTopicMetadata.addTopicMetadata(savedTopicMetadata, fieldSet);
-        // 카프카 토픽 생성
-        NewTopic newTopic = new NewTopic(topicRequest.getTopicName(), topicRequest.getPartitions(), (short) topicRequest.getReplicationFactor());
-        adminClient.createTopics(Collections.singleton(newTopic)).all().get();
-        // 리스너 생성
-        listenerManager.addListener(savedTopicMetadata.getTopicName());
+
+        kafkaService.createTopic(topicRequest); // 카프카 토픽 생성
+        indexService.createIndex(topicRequest.getTopicName()); // ES Index 생성
+        inMemoryTopicMetadata.addTopicMetadata(savedTopicMetadata, fieldSet); // 캐시 저장
         return savedTopicMetadata.getId();
     }
 
     @Transactional(rollbackOn = {ExecutionException.class, InterruptedException.class, RuntimeException.class})
     public void deleteTopic(Long id) throws ExecutionException, InterruptedException {
         TopicMetadata topicMetadata = topicMetadataRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("존재하지 않는 topic 입니다. id: " + id));
-        // 리스너 제거
-        listenerManager.removeListener(topicMetadata.getTopicName());
-        // 카프카 토픽 제거
-        adminClient.deleteTopics(Collections.singleton(topicMetadata.getTopicName())).all().get();
-        // DB 및 캐시에서 삭제
-        inMemoryTopicMetadata.removeTopicMetadata(topicMetadata.getTopicName());
+        String topicName = topicMetadata.getTopicName();
+        // DB 삭제
         fieldMetadataRepository.deleteByTopicMetadataId(topicMetadata.getId());
         topicMetadataRepository.delete(topicMetadata);
-        // 토픽 이름으로 생성된 설정 제거
-        aggSettingService.deleteAllByTopicName(topicMetadata.getTopicName());
+
+        aggSettingService.deleteAllByTopicName(topicName); // 실시간 집계 설정 제거
+        kafkaService.deleteTopic(topicName); // 카프카 토픽 제거
+        indexService.deleteIndex(topicName); // ES Index 제거
+        inMemoryTopicMetadata.removeTopicMetadata(topicName); // 캐시 제거
     }
 
     // 토픽 DB, cache 설정 변경
@@ -72,32 +70,22 @@ public class TopicService {
         TopicMetadata topicMetadata = topicMetadataRepository.findById(updateRequest.getId()).orElseThrow(() -> new IllegalArgumentException("존재하지 않는 topic 입니다. id: " + updateRequest.getId()));
         topicMetadata.updateDescription(updateRequest.getTopicDescription());
         topicMetadataRepository.save(topicMetadata);
-        // 기존 필드와 비교
-        Set<FieldDto> newFields = new HashSet<>(updateRequest.getFields());
-        Set<Long> removedTargetIds = new HashSet<>();
-        Set<FieldMetadata> updatedFields = compareFields(topicMetadata, newFields, removedTargetIds);
-        // 비교 완료된 메타데이터 저장
-        fieldMetadataRepository.saveAll(updatedFields);
-        fieldMetadataRepository.deleteAllByIds(removedTargetIds);
+        // 기존 필드와의 중복 체크 후 저장
+        Set<FieldMetadata> newFields = compareFields(topicMetadata, updateRequest.getFields());
+        fieldMetadataRepository.saveAll(newFields);
         // 캐시 업데이트
-        inMemoryTopicMetadata.updateTopicMetadata(topicMetadata, updateRequest.getFields());
+        inMemoryTopicMetadata.updateTopicMetadata(topicMetadata, newFields);
         return inMemoryTopicMetadata.getTopicMetadata(topicMetadata.getTopicName());
     }
 
     public List<TopicDto> findAllTopics() {
+        inMemoryTopicMetadata.refreshTopicMetadata();
         return inMemoryTopicMetadata.getAllTopics();
     }
 
-    public Set<FieldMetadata> compareFields(TopicMetadata topicMetadata, Set<FieldDto> newFieldSet, Set<Long> removedTargetIds) {
+    public Set<FieldMetadata> compareFields(TopicMetadata topicMetadata, Set<FieldDto> newFieldSet) {
         Set<FieldMetadata> existingField = fieldMetadataRepository.findAllByTopicMetadataId(topicMetadata.getId());
-        for (FieldMetadata fieldEntity: existingField) {
-            FieldDto existField = FieldDto.fromEntity(fieldEntity);
-            if (newFieldSet.contains(existField)) { // 기존과 동일한 필드가 있으면 수정목록에서 제거
-                newFieldSet.remove(existField);
-            } else { // 사용하지 않는 필드 제거
-                removedTargetIds.add(fieldEntity.getId());
-            }
-        }
+        existingField.stream().map(FieldDto::fromEntity).forEach(newFieldSet::remove);
         return newFieldSet.stream().map(fieldDto -> fieldDto.toEntity(topicMetadata)).collect(Collectors.toSet());
     }
 }

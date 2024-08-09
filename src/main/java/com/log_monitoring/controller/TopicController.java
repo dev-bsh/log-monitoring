@@ -26,7 +26,6 @@ public class TopicController {
     @Operation(summary = "토픽 생성")
     @PostMapping("")
     public ResponseEntity<Long> createTopic(@RequestBody TopicSaveRequest topicSaveRequest) throws ExecutionException, InterruptedException {
-        log.info("Create topic {}", topicSaveRequest.toString());
         return ResponseEntity.ok(topicService.createTopic(topicSaveRequest));
     }
 
@@ -43,7 +42,7 @@ public class TopicController {
         return ResponseEntity.ok("Kafka topic, consumer, DB 메타데이터 제거 성공: " + id);
     }
 
-    @Operation(summary = "토픽 수정")
+    @Operation(summary = "토픽 수정", description = "필드 수정은 추가만 가능")
     @PutMapping("")
     public ResponseEntity<TopicDto> updateTopic(@RequestBody TopicUpdateRequest topicUpdateRequest) {
         return ResponseEntity.ok(topicService.updateTopic(topicUpdateRequest));

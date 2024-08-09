@@ -3,7 +3,6 @@ package com.log_monitoring.service;
 import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
 import co.elastic.clients.elasticsearch._types.aggregations.Buckets;
 import co.elastic.clients.elasticsearch._types.aggregations.DateHistogramBucket;
-import co.elastic.clients.elasticsearch._types.aggregations.FilterAggregate;
 import com.log_monitoring.dto.LogDataAggSearchRequest;
 import com.log_monitoring.dto.LogDataAggSearchResponse;
 import com.log_monitoring.dto.LogDataSearchRequest;
@@ -27,17 +26,7 @@ public class LogDataService {
     private final LogDataRepository logDataRepository;
 
     public void save(LogData logData) {
-        Map<String, Object> newData = new HashMap<>();
-        // 필드이름 중복 피하기 위해 topicName, fieldName 결합
-        logData.getData().forEach((key, value) -> {
-            newData.put(logData.getTopicName()+"_"+key, value);
-        });
-        LogData convertedLogData = LogData.builder()
-                .topicName(logData.getTopicName())
-                .timestamp(logData.getTimestamp())
-                .data(newData)
-                .build();
-        logDataRepository.save(convertedLogData);
+        logDataRepository.save(logData);
     }
 
     // raw data 조회
@@ -48,23 +37,32 @@ public class LogDataService {
 
     // aggregation data 조회
     public LogDataAggSearchResponse findAllAggByCondition(LogDataAggSearchRequest requestDto) {
-        long term = requestDto.getTo() - requestDto.getFrom();
-        if (term > 86400_000 * 7) {
+        if (requestDto.getTo() - requestDto.getFrom() > 86400_000 * 7) {
             throw new IllegalArgumentException("[Timestamp Range ERROR] 조회하려는 시간범위가 7일보다 크게 설정되었습니다.");
         }
 
         SearchHits<LogData> searchHits = logDataRepository.findAllAggByCondition(requestDto);
+        List<LogDataAggSearchResponse.AggResult> resultList = getAggResultFromSearchHits(searchHits);
+
+        return LogDataAggSearchResponse.builder()
+                .topicName(requestDto.getTopicName())
+                .result(resultList)
+                .build();
+    }
+    
+    // searchHits에서 집계 결과 추출
+    private List<LogDataAggSearchResponse.AggResult> getAggResultFromSearchHits(SearchHits<LogData> searchHits) {
         List<LogDataAggSearchResponse.AggResult> resultList = new ArrayList<>();
-        // searchHits에서 집계 결과 추출
+
         if (searchHits.hasAggregations()) {
             ElasticsearchAggregations aggregations = (ElasticsearchAggregations) searchHits.getAggregations();
-            Map<String, ElasticsearchAggregation> aggregationMap = Objects.requireNonNull(aggregations).aggregationsAsMap();
-            for (String settingName : aggregationMap.keySet()) {
-                Aggregate aggregate = aggregationMap.get(settingName).aggregation().getAggregate();
+            Map<String, ElasticsearchAggregation> aggMap = Objects.requireNonNull(aggregations).aggregationsAsMap();
+            for (String settingName : aggMap.keySet()) {
+                Aggregate aggregate = aggMap.get(settingName).aggregation().getAggregate();
                 Buckets<DateHistogramBucket> buckets;
-                if (aggregate.isDateHistogram()) { // 범위내 모든 로그 대상 DateHistogram
+                if (aggregate.isDateHistogram()) { // Filter 없는 DateHistogram
                     buckets = aggregate.dateHistogram().buckets();
-                } else { // 설정 Filter 로그 대상 DateHistogram
+                } else { // Filter 집계 DateHistogram
                     buckets = aggregate.filter().aggregations().get("interval").dateHistogram().buckets();
                 }
                 // 집계 결과 값에서 timestamp, count 값 매핑
@@ -76,10 +74,8 @@ public class LogDataService {
                         .data(dataList).build());
             }
         }
-        return LogDataAggSearchResponse.builder()
-                .topicName(requestDto.getTopicName())
-                .result(resultList)
-                .build();
+
+        return resultList;
     }
 
 }

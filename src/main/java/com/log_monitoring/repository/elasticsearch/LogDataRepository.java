@@ -1,9 +1,12 @@
 package com.log_monitoring.repository.elasticsearch;
 
+import com.log_monitoring.dto.LogDataAggSearchRequest;
+import com.log_monitoring.dto.LogDataSearchRequest;
 import com.log_monitoring.model.elasticsearch.LogData;
-import org.springframework.data.elasticsearch.repository.ElasticsearchRepository;
-import org.springframework.stereotype.Repository;
+import org.springframework.data.elasticsearch.core.SearchHits;
 
-@Repository
-public interface LogDataRepository extends ElasticsearchRepository<LogData, String>, LogDataRepositoryExtension{
+public interface LogDataRepository {
+    void save(LogData logData);
+    SearchHits<LogData> findAllByCondition(LogDataSearchRequest requestDto);
+    SearchHits<LogData> findAllAggByCondition(LogDataAggSearchRequest requestDto);
 }

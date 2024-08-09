@@ -26,15 +26,12 @@ public class SchedulerService {
 
     // 1분 단위 실시간 통계 데이터 생성
     public void searchAggregationPerMinute() {
-        long now = System.currentTimeMillis();
-        // DB 설정 가져와서 집계검색 형태로 변환
+        // DB에 저장된 AggSetting -> AggSettingResponse 형태로 가져오기
         List<AggSettingResponse> realTimeAggSettingList = aggSettingService.findAll();
-        Map<String, List<LogDataAggSearchRequest.SearchSetting>> aggSettingMap = new HashMap<>();
-        convertAggSettingToMap(realTimeAggSettingList, aggSettingMap);
-
+        // AggSettingResponse -> 토픽 이름별로 매핑
+        Map<String, List<LogDataAggSearchRequest.SearchSetting>> aggSettingMap = convertAggSettingToMap(realTimeAggSettingList);
         // 설정별 1분 단위 요청 생성
-        List<LogDataAggSearchRequest> aggSearchRequestList = new ArrayList<>();
-        creatSearchRequestPerMinute(now, aggSettingMap, aggSearchRequestList);
+        List<LogDataAggSearchRequest> aggSearchRequestList = createSearchRequestPerMinute(aggSettingMap);
 
         // 설정별 1분 단위 조회
         for (LogDataAggSearchRequest searchRequest : aggSearchRequestList) {
@@ -57,7 +54,8 @@ public class SchedulerService {
         }
     }
 
-    private void convertAggSettingToMap(List<AggSettingResponse> aggSettingList, Map<String, List<LogDataAggSearchRequest.SearchSetting>> aggSettingMap) {
+    private Map<String, List<LogDataAggSearchRequest.SearchSetting>> convertAggSettingToMap(List<AggSettingResponse> aggSettingList) {
+        Map<String, List<LogDataAggSearchRequest.SearchSetting>> aggSettingMap = new HashMap<>();
         // DB 설정을 토픽별로 구분해서 Map으로 생성
         for (AggSettingResponse realTimeAggSetting : aggSettingList) {
             aggSettingMap.computeIfAbsent(realTimeAggSetting.getTopicName(), k -> new ArrayList<>())
@@ -66,19 +64,22 @@ public class SchedulerService {
                             .conditionList(realTimeAggSetting.getCondition())
                             .build());
         }
+        return aggSettingMap;
     }
 
-    private void creatSearchRequestPerMinute(long now, Map<String, List<LogDataAggSearchRequest.SearchSetting>> aggSettingMap, List<LogDataAggSearchRequest> requestList) {
+    private List<LogDataAggSearchRequest> createSearchRequestPerMinute(Map<String, List<LogDataAggSearchRequest.SearchSetting>> aggSettingMap) {
+        List<LogDataAggSearchRequest> requestList = new ArrayList<>();
+        long now = System.currentTimeMillis();
         long to = now - (now % 60000); // 1분 단위 조회를 위해 초 제거
         for (String topicName : aggSettingMap.keySet()) {
-            LogDataAggSearchRequest request = LogDataAggSearchRequest.builder()
+            requestList.add(LogDataAggSearchRequest.builder()
                     .from(to - 60000) // 이전 1분 부터
                     .to(to - 1) // 스케줄 시작시간 - 1ms 까지
                     .topicName(topicName)
                     .searchSettings(aggSettingMap.get(topicName))
-                    .build();
-            requestList.add(request);
+                    .build());
         }
+        return requestList;
     }
 
     // redis에 저장된 전체 통계 데이터 조회

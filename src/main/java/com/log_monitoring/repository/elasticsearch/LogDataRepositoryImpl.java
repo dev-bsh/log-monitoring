@@ -10,6 +10,7 @@ import com.log_monitoring.dto.LogDataAggSearchRequest;
 import com.log_monitoring.dto.LogDataSearchRequest;
 import com.log_monitoring.model.elasticsearch.LogData;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.client.elc.NativeQueryBuilder;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
@@ -20,17 +21,24 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
-public class LogDataRepositoryExtensionImpl implements LogDataRepositoryExtension {
+public class LogDataRepositoryImpl implements LogDataRepository {
 
     private final ElasticsearchOperations elasticsearchOperations;
-    private final IndexCoordinates index = IndexCoordinates.of("logs");
     private final String TOPIC_NAME = "topicName";
     private final String TIMESTAMP = "timestamp";
 
     @Override
+    public void save(LogData logData) {
+        IndexCoordinates index = getIndexCoordinates(logData.getTopicName());
+        elasticsearchOperations.save(logData, index);
+    }
+
+    @Override
     public SearchHits<LogData> findAllByCondition(LogDataSearchRequest request) {
+        IndexCoordinates index = getIndexCoordinates(request.getTopicName());
         Query query = NativeQuery.builder()
                 .withQuery(q -> q.bool(bool -> {
                     bool.filter(f -> f.term(t -> t.field(TOPIC_NAME).value(request.getTopicName())))
@@ -44,6 +52,7 @@ public class LogDataRepositoryExtensionImpl implements LogDataRepositoryExtensio
 
     @Override
     public SearchHits<LogData> findAllAggByCondition(LogDataAggSearchRequest request) {
+        IndexCoordinates index = getIndexCoordinates(request.getTopicName());
         boolean isContainTotalSearch = request.getSearchSettings().stream().anyMatch(setting -> setting.getConditionList().isEmpty());
         NativeQueryBuilder queryBuilder = NativeQuery.builder()
                 .withQuery(q -> q.bool(bool -> {
@@ -95,8 +104,7 @@ public class LogDataRepositoryExtensionImpl implements LogDataRepositoryExtensio
 
     private void addConditionQuery(BoolQuery.Builder bool, List<ConditionDto> conditionList, String topicName) {
         for (ConditionDto condition: conditionList) {
-            // 필드 중복 방지를 위해 topicName_fieldName로 저장되어 있음
-            String fieldName = "data."+topicName+"_"+condition.getFieldName();
+            String fieldName = "data."+condition.getFieldName();
             if (condition.getEqual()) {
                 // 완전 일치 시 keyword 값으로 탐색
                 bool.filter(f -> f.term(t -> t.field(fieldName+".keyword").value(condition.getKeyword())));
@@ -115,6 +123,11 @@ public class LogDataRepositoryExtensionImpl implements LogDataRepositoryExtensio
         } else {
             return CalendarInterval.Day;
         }
+    }
+
+    private IndexCoordinates getIndexCoordinates(String topicName) {
+        String indexName = "index_" + topicName;
+        return IndexCoordinates.of(indexName.toLowerCase());
     }
 
 }

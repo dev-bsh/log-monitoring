@@ -4,13 +4,9 @@ import jakarta.persistence.Id;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.elasticsearch.annotations.*;
 
 import java.util.Map;
 
-@Document(indexName = "logs")
-@Setting(settingPath = "es-setting.json")
-@Mapping(mappingPath = "es-mapping.json")
 @Getter
 @NoArgsConstructor
 public class LogData {
