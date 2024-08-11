@@ -62,4 +62,8 @@ public class InMemoryTopicMetadata {
                 .map(topicEntity -> TopicDto.fromEntity(topicEntity, fieldMetadataRepository.findAllByTopicMetadataId(topicEntity.getId())))
                 .forEach(topicDto -> topicMetadataCache.put(topicDto.getTopicName(), topicDto));
     }
+
+    public boolean isExistingTopic(String topicName) {
+        return topicMetadataCache.containsKey(topicName);
+    }
 }

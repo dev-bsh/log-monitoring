@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
@@ -69,13 +70,13 @@ public class TopicService {
         // 토픽 description 수정
         TopicMetadata topicMetadata = topicMetadataRepository.findById(updateRequest.getId()).orElseThrow(() -> new IllegalArgumentException("존재하지 않는 topic 입니다. id: " + updateRequest.getId()));
         topicMetadata.updateDescription(updateRequest.getTopicDescription());
-        topicMetadataRepository.save(topicMetadata);
+        TopicMetadata savedTopic =  topicMetadataRepository.save(topicMetadata);
         // 기존 필드와의 중복 체크 후 저장
-        Set<FieldMetadata> newFields = compareFields(topicMetadata, updateRequest.getFields());
+        Set<FieldMetadata> newFields = compareFields(savedTopic, updateRequest.getFields());
         fieldMetadataRepository.saveAll(newFields);
         // 캐시 업데이트
-        inMemoryTopicMetadata.updateTopicMetadata(topicMetadata, newFields);
-        return inMemoryTopicMetadata.getTopicMetadata(topicMetadata.getTopicName());
+        inMemoryTopicMetadata.updateTopicMetadata(savedTopic, newFields);
+        return inMemoryTopicMetadata.getTopicMetadata(savedTopic.getTopicName());
     }
 
     public List<TopicDto> findAllTopics() {
@@ -83,9 +84,16 @@ public class TopicService {
         return inMemoryTopicMetadata.getAllTopics();
     }
 
-    public Set<FieldMetadata> compareFields(TopicMetadata topicMetadata, Set<FieldDto> newFieldSet) {
-        Set<FieldMetadata> existingField = fieldMetadataRepository.findAllByTopicMetadataId(topicMetadata.getId());
-        existingField.stream().map(FieldDto::fromEntity).forEach(newFieldSet::remove);
-        return newFieldSet.stream().map(fieldDto -> fieldDto.toEntity(topicMetadata)).collect(Collectors.toSet());
+    public Set<FieldMetadata> compareFields(TopicMetadata topicMetadata, Set<FieldDto> requestedFields) {
+        Set<String> existingFields = fieldMetadataRepository.findAllByTopicMetadataId(topicMetadata.getId()).stream()
+                .map(FieldMetadata::getFieldName).collect(Collectors.toSet());
+
+        Set<FieldDto> newFields = new LinkedHashSet<>();
+        requestedFields.forEach(requestedField -> {
+            if (!existingFields.contains(requestedField.getFieldName())) {
+                newFields.add(requestedField);
+            }
+        });
+        return newFields.stream().map(fieldDto -> fieldDto.toEntity(topicMetadata)).collect(Collectors.toSet());
     }
 }

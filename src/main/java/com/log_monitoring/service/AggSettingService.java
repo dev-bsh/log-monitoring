@@ -1,5 +1,6 @@
 package com.log_monitoring.service;
 
+import com.log_monitoring.config.InMemoryTopicMetadata;
 import com.log_monitoring.dto.AggSettingResponse;
 import com.log_monitoring.dto.AggSettingSaveRequest;
 import com.log_monitoring.dto.ConditionDto;
@@ -18,6 +19,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AggSettingService {
 
+    private final InMemoryTopicMetadata inmemoryTopicMetadata;
     private final AggSettingRepository aggSettingRepository;
     private final ConditionRepository conditionRepository;
     private final RedisTemplate<String, Object> redisTemplate;
@@ -25,6 +27,14 @@ public class AggSettingService {
     // 1분간 스케줄러에서 통계 데이터 수집할 설정 저장
     @Transactional
     public Long save(AggSettingSaveRequest request) {
+        if (!inmemoryTopicMetadata.isExistingTopic(request.getTopicName())) {
+            throw new IllegalArgumentException("존재하지 않는 토픽 이름입니다. topicName: " + request.getTopicName());
+        }
+
+        if (aggSettingRepository.findByTopicNameAndSettingName(request.getTopicName(), request.getSettingName()).isPresent()) {
+            throw new IllegalArgumentException("이미 존재하는 설정입니다. settingName: " + request.getSettingName());
+        }
+
         AggSetting savedAggSetting = aggSettingRepository.save(request.toEntity());
         List<Condition> conditionList =  request.getCondition().stream()
                 .map(conditionDto -> conditionDto.toEntity(savedAggSetting)).toList();
@@ -35,7 +45,7 @@ public class AggSettingService {
     @Transactional
     public void delete(long id) {
         AggSetting aggSetting = aggSettingRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("AggregationSetting id : " + id + " not found"));
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 설정입니다. AggSetting id : " + id));
         conditionRepository.deleteAllByAggSettingId(aggSetting.getId());
         aggSettingRepository.delete(aggSetting);
         redisTemplate.delete(generateRedisKey(aggSetting.getTopicName(), aggSetting.getSettingName()));

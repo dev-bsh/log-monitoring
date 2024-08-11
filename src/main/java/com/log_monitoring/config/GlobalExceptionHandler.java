@@ -28,6 +28,12 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>("Operation interrupted: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<String> handleIllegalArgumentException(IllegalArgumentException e) {
+        log.error("BAD REQUEST OCCURRED: {}", e.getMessage());
+        return new ResponseEntity<>("Illegal argument: " + e.getMessage(), HttpStatus.BAD_REQUEST);
+    }
+
     // 기본 처리기: 모든 예외를 처리
     @ExceptionHandler(Exception.class)
     public ResponseEntity<String> handleException(Exception e) {
