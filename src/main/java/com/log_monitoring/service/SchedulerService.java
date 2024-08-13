@@ -3,8 +3,10 @@ package com.log_monitoring.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.log_monitoring.dto.AggSettingResponse;
+import com.log_monitoring.dto.AggSettingSaveRequest;
 import com.log_monitoring.dto.LogDataAggSearchRequest;
 import com.log_monitoring.dto.LogDataAggSearchResponse;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -24,6 +26,48 @@ public class SchedulerService {
     private final LogDataService logDataService;
     private final ObjectMapper objectMapper;
 
+    // Redis 데이터 최신화
+    @PostConstruct
+    public void init() {
+        List<AggSettingResponse> realTimeAggSettingList = aggSettingService.findAll();
+        Map<String, List<LogDataAggSearchRequest.SearchSetting>> aggSettingMap = convertAggSettingToMap(realTimeAggSettingList);
+        List<LogDataAggSearchRequest> aggSearchRequestList = createSearchRequestPerHour(aggSettingMap);
+        // 설정별 1분 단위 조회
+        for (LogDataAggSearchRequest searchRequest : aggSearchRequestList) {
+            LogDataAggSearchResponse aggSearchResult = logDataService.findAllAggByCondition(searchRequest);
+            saveAggSearchResponseInRedis(aggSearchResult); //집계 결과 redis에 저장
+        }
+    }
+
+    // 설정 생성 시 1시간 단위 통계 데이터 생성
+    public void searchAggregationPerHour(AggSettingSaveRequest request) {
+        LogDataAggSearchRequest.SearchSetting searchSetting = LogDataAggSearchRequest.SearchSetting.builder()
+                .settingName(request.getSettingName())
+                .conditionList(request.getCondition())
+                .build();
+        List<LogDataAggSearchRequest> aggSearchRequestList = createSearchRequestPerHour(Map.of(request.getTopicName(), List.of(searchSetting)));
+        // 설정별 1분 단위 조회
+        for (LogDataAggSearchRequest searchRequest : aggSearchRequestList) {
+            LogDataAggSearchResponse aggSearchResult = logDataService.findAllAggByCondition(searchRequest);
+            saveAggSearchResponseInRedis(aggSearchResult); //집계 결과 redis에 저장
+        }
+    }
+
+    private List<LogDataAggSearchRequest> createSearchRequestPerHour(Map<String, List<LogDataAggSearchRequest.SearchSetting>> aggSettingMap) {
+        List<LogDataAggSearchRequest> requestList = new ArrayList<>();
+        long now = System.currentTimeMillis();
+        long to = now - (now % 60000); // 1분 단위 조회를 위해 초 제거
+        for (String topicName : aggSettingMap.keySet()) {
+            requestList.add(LogDataAggSearchRequest.builder()
+                    .from(to-3600_000) // 현재기준 1시간 이전
+                    .to(to-1) // 현재기준 1분 이전
+                    .topicName(topicName)
+                    .searchSettings(aggSettingMap.get(topicName))
+                    .build());
+        }
+        return requestList;
+    }
+
     // 1분 단위 실시간 통계 데이터 생성
     public void searchAggregationPerMinute() {
         // DB에 저장된 AggSetting -> AggSettingResponse 형태로 가져오기
@@ -42,14 +86,37 @@ public class SchedulerService {
         }
     }
 
+    private List<LogDataAggSearchRequest> createSearchRequestPerMinute(Map<String, List<LogDataAggSearchRequest.SearchSetting>> aggSettingMap) {
+        List<LogDataAggSearchRequest> requestList = new ArrayList<>();
+        long now = System.currentTimeMillis();
+        long to = now - (now % 60000); // 1분 단위 조회를 위해 초 제거
+        for (String topicName : aggSettingMap.keySet()) {
+            requestList.add(LogDataAggSearchRequest.builder()
+                    .from(to - 60000) // 이전 1분 부터
+                    .to(to - 1) // 스케줄 시작시간 - 1ms 까지
+                    .topicName(topicName)
+                    .searchSettings(aggSettingMap.get(topicName))
+                    .build());
+        }
+        return requestList;
+    }
+
     private void saveAggSearchResponseInRedis(LogDataAggSearchResponse aggSearchResult) {
         for (LogDataAggSearchResponse.AggResult aggResult : aggSearchResult.getResult()) {
             // key: topicName_settingName
             String redisKey = generateRedisKey(aggSearchResult.getTopicName(), aggResult.getSettingName());
-            redisTemplate.opsForList().rightPush(redisKey, aggResult.getData().get(0));
-            // 60개 넘어가면 오래된 값 1개 제거
-            if (Objects.requireNonNull(redisTemplate.opsForList().size(redisKey)).intValue() > 60) {
-                redisTemplate.opsForList().leftPop(redisKey);
+            if (aggResult.getData().size() == 60) { // 새로운 설정 추가 or init() 메서드 실행 시
+                redisTemplate.delete(redisKey);
+                aggResult.getData().forEach(data -> {
+                   redisTemplate.opsForList().rightPush(redisKey, data);
+                });
+            } else {
+                LogDataAggSearchResponse.AggResult.Data data = (LogDataAggSearchResponse.AggResult.Data) redisTemplate.opsForList().index(redisKey, -1);
+                long lastTimestamp = Objects.requireNonNull(data).getTimestamp();
+                if (aggResult.getData().get(0).getTimestamp() > lastTimestamp) {
+                    redisTemplate.opsForList().rightPush(redisKey, aggResult.getData().get(0));
+                    redisTemplate.opsForList().leftPop(redisKey);
+                }
             }
         }
     }
@@ -65,21 +132,6 @@ public class SchedulerService {
                             .build());
         }
         return aggSettingMap;
-    }
-
-    private List<LogDataAggSearchRequest> createSearchRequestPerMinute(Map<String, List<LogDataAggSearchRequest.SearchSetting>> aggSettingMap) {
-        List<LogDataAggSearchRequest> requestList = new ArrayList<>();
-        long now = System.currentTimeMillis();
-        long to = now - (now % 60000); // 1분 단위 조회를 위해 초 제거
-        for (String topicName : aggSettingMap.keySet()) {
-            requestList.add(LogDataAggSearchRequest.builder()
-                    .from(to - 60000) // 이전 1분 부터
-                    .to(to - 1) // 스케줄 시작시간 - 1ms 까지
-                    .topicName(topicName)
-                    .searchSettings(aggSettingMap.get(topicName))
-                    .build());
-        }
-        return requestList;
     }
 
     // redis에 저장된 전체 통계 데이터 조회

@@ -11,6 +11,8 @@ import com.log_monitoring.dto.LogDataSearchRequest;
 import com.log_monitoring.model.elasticsearch.LogData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.client.elc.NativeQueryBuilder;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
@@ -46,6 +48,8 @@ public class LogDataRepositoryImpl implements LogDataRepository {
                         addConditionQuery(bool, request.getCondition(), request.getTopicName());
                     return bool;
                 }))
+                .withSort(Sort.by(Sort.Order.desc(TIMESTAMP))) // 최신 데이터부터 페이징
+                .withPageable(Pageable.ofSize(request.getPageSize()).withPage(request.getPageNo()))
                 .build();
         return elasticsearchOperations.search(query, LogData.class, index);
     }
@@ -55,6 +59,7 @@ public class LogDataRepositoryImpl implements LogDataRepository {
         IndexCoordinates index = getIndexCoordinates(request.getTopicName());
         boolean isContainTotalSearch = request.getSearchSettings().stream().anyMatch(setting -> setting.getConditionList().isEmpty());
         NativeQueryBuilder queryBuilder = NativeQuery.builder()
+                .withMaxResults(0) // 문서 결과 없이 집계 결과만 가져오기
                 .withQuery(q -> q.bool(bool -> {
                     bool.filter(f -> f.term(t -> t.field(TOPIC_NAME).value(request.getTopicName())))
                         .filter(f -> f.range(r -> r.field(TIMESTAMP).gte(JsonData.of(request.getFrom())).lte(JsonData.of(request.getTo()))));

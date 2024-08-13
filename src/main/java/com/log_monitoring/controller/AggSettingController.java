@@ -3,6 +3,7 @@ package com.log_monitoring.controller;
 import com.log_monitoring.dto.AggSettingResponse;
 import com.log_monitoring.dto.AggSettingSaveRequest;
 import com.log_monitoring.service.AggSettingService;
+import com.log_monitoring.service.SchedulerService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,7 @@ import java.util.List;
 public class AggSettingController {
 
     private final AggSettingService aggSettingService;
+    private final SchedulerService schedulerService;
 
     @Operation(
             summary = "집계 설정 추가",
@@ -26,7 +28,9 @@ public class AggSettingController {
     )
     @PostMapping
     public ResponseEntity<Long> saveAggregationSetting(@RequestBody AggSettingSaveRequest request) {
-        return ResponseEntity.ok(aggSettingService.save(request));
+        Long savedId = aggSettingService.save(request);
+        schedulerService.searchAggregationPerHour(request);
+        return ResponseEntity.ok(savedId);
     }
 
     @Operation(summary = "집계 설정 제거")
